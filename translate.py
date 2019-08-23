@@ -46,8 +46,9 @@ def split_and_clean_language_line(line):
     original, translation = cleanLine.split("\t")
     return original, translation
 
-def pad_start_and_end(sentence):
-
+def pad_sentence_ends(sentence, startPad='START', endPad='END'):
+    assert isinstance(sentence, str), 'sentence must have type str'
+    return f'{startPad} {sentence} {endPad}'
 
 def build_language_objects(filePath='fra-eng/fra.txt'):
     """
