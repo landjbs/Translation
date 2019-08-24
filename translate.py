@@ -340,62 +340,68 @@ model = build_encoder_decoder(featureLanguageObj=englishObj,
                                 targetLanguageObj=frenchObj)
 
 # train model
-trainedModel = compile_and_train_model(enocderFeatures, decoderFeatures, decoderTargets, outPath='encoderDecoderModel.sav')
-
-## Sampling ##
-encoder_model = keras.models.Model(encoder_in, encoder_states)
-
-decoder_state_input_h = keras.layers.Input(shape=(latentDims,))
-decoder_state_input_c = keras.layers.Input(shape=(latentDims,))
-decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-decoder_outputs, state_h, state_c = decoder_lstm(decoder_in, initial_state=decoder_states_inputs)
-decoder_states = [state_h, state_c]
-decoder_outputs = decoder_dense(decoder_outputs)
-decoder_model = keras.models.Model(
-    [decoder_in] + decoder_states_inputs,
-    [decoder_outputs] + decoder_states)
+trainedModel = compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets, model, outPath='encoderDecoderModel.sav')
 
 
-def decode_sequence(input_seq):
-    # Encode the input as state vectors.
-    states_value = encoder_model.predict(np.expand_dims(input_seq, axis=0))[0]
-
-    # Generate empty target sequence of length 1.
-    target_seq = np.zeros((1, 1, frenchObj.vocabSize))
-    # Populate the first character of target sequence with the start character.
-    target_seq[0, 0, frenchObj.idxDict['START']] = 1.
-
-    # Sampling loop for a batch of sequences
-    # (to simplify, here we assume a batch of size 1).
-    stop_condition = False
-    decoded_sentence = ''
-    while not stop_condition:
-        output_tokens, h, c = decoder_model.predict(
-            target_seq + states_value)
-
-        # Sample a token
-        sampled_token_index = np.argmax(output_tokens[0, -1, :])
-        sampled_char = frenchObj.reverseIdx[sampled_token_index]
-        decoded_sentence += sampled_char
-
-        # Exit condition: either hit max length
-        # or find stop character.
-        if (sampled_char == 'END' or
-           len(decoded_sentence) > frenchObj.maxSentLen):
-            stop_condition = True
-
-        # Update the target sequence (of length 1).
-        target_seq = np.zeros((1, 1, frenchObj.vocabSize))
-        target_seq[0, 0, sampled_token_index] = 1.
-
-        # Update states
-        states_value = [h, c]
-
-    return decoded_sentence
-
-
-while True:
-    text = input('Text: ')
-    input_seq = encode_sentence(text, englishObj)
-    decoded_sentence = decode_sequence(input_seq)
-    print('Decoded sentence:', decoded_sentence)
+# import keras
+#
+# trainedModel = keras.models.load_model('encoderDecoderModel.sav')
+# print(trainedModel.summary())
+#
+# ## Sampling ##
+# encoder_model = keras.models.Model(encoder_in, encoder_states)
+#
+# decoder_state_input_h = keras.layers.Input(shape=(latentDims,))
+# decoder_state_input_c = keras.layers.Input(shape=(latentDims,))
+# decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+# decoder_outputs, state_h, state_c = decoder_lstm(decoder_in, initial_state=decoder_states_inputs)
+# decoder_states = [state_h, state_c]
+# decoder_outputs = decoder_dense(decoder_outputs)
+# decoder_model = keras.models.Model(
+#     [decoder_in] + decoder_states_inputs,
+#     [decoder_outputs] + decoder_states)
+#
+#
+# def decode_sequence(input_seq):
+#     # Encode the input as state vectors.
+#     states_value = encoder_model.predict(np.expand_dims(input_seq, axis=0))[0]
+#
+#     # Generate empty target sequence of length 1.
+#     target_seq = np.zeros((1, 1, frenchObj.vocabSize))
+#     # Populate the first character of target sequence with the start character.
+#     target_seq[0, 0, frenchObj.idxDict['START']] = 1.
+#
+#     # Sampling loop for a batch of sequences
+#     # (to simplify, here we assume a batch of size 1).
+#     stop_condition = False
+#     decoded_sentence = ''
+#     while not stop_condition:
+#         output_tokens, h, c = decoder_model.predict(
+#             target_seq + states_value)
+#
+#         # Sample a token
+#         sampled_token_index = np.argmax(output_tokens[0, -1, :])
+#         sampled_char = frenchObj.reverseIdx[sampled_token_index]
+#         decoded_sentence += sampled_char
+#
+#         # Exit condition: either hit max length
+#         # or find stop character.
+#         if (sampled_char == 'END' or
+#            len(decoded_sentence) > frenchObj.maxSentLen):
+#             stop_condition = True
+#
+#         # Update the target sequence (of length 1).
+#         target_seq = np.zeros((1, 1, frenchObj.vocabSize))
+#         target_seq[0, 0, sampled_token_index] = 1.
+#
+#         # Update states
+#         states_value = [h, c]
+#
+#     return decoded_sentence
+#
+#
+# while True:
+#     text = input('Text: ')
+#     input_seq = encode_sentence(text, englishObj)
+#     decoded_sentence = decode_sequence(input_seq)
+#     print('Decoded sentence:', decoded_sentence)
