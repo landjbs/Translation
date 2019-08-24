@@ -121,7 +121,7 @@ def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
 
 
 def encode_training_data(featureWords, targetWords, featureLanguageObj,
-                        targetLanguageObj, sampleCap=None):
+                        targetLanguageObj, sampleNum=None):
     """
     Encodes matrix of raw unpadded feature and target words
     Args:
@@ -129,7 +129,7 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
         targetWords:            List of token lists for each target sentence
         featureLanguageObj:     Language() object of feature language
         targetLanguageObj:      Language() object of target language
-        sampleCap (*optional):  Maximum number of samples to encode;
+        sampleNum (*optional):  Maximum number of samples to encode;
                                     defaults to None: all will be encoded
     Returns:
         encoderFeatures:        Numpy matrix of one-hot encoded words for each
@@ -148,8 +148,8 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
                                     target for decoder LSTM (and model).
     """
     # assertions and formatting
-    if not sampleCap:
-        sampleCap = (len(featureWords) + 1)
+    if not sampleNum:
+        sampleNum = (len(featureWords) + 1)
     assert isinstance(sampleCap, int), 'sampleCap mut have type int'
     assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
     assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
@@ -172,6 +172,8 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     # iterate over features and targets, building encoded arrays
     for sentNum, (featureSent, targetSent) in tqdm(enumerate(zip(featureWords,
                                                                 targetWords))):
+        if sentNum > sampleNum:
+            break
         # iterate over current feature sentence building 2D matrix of one-hot
         # encoded vectors of each word
         for wordNum, word in enumerate(featureSent):
@@ -189,67 +191,50 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     return encoderFeatures, decoderFeatures, decoderTargets
 
 
-
-def encode_word(word, languageObj):
-    """ Encodes a word as one-hot vector across vocab """
-    assert (word in languageObj.idxDict), f'{word} in not in {languageObj.name}'
-    wordVec = np.zeros(shape=(languageObj.vocabSize))
-    wordVec[(languageObj.idxDict[word])] = 1
-    return wordVec
-
-
-def make_padding_vec(languageObj):
-    emptyVec = np.zeros(shape=(languageObj.vocabSize))
-    return emptyVec
-
-
-def encode_sentence(sentence, language):
+def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300):
     """
-    Encodes sentence in language as one-hot matrix of word vectors with padding
-    up to language. Maxtix will have shape (vocabSize, maxSentLen)
+    Builds encoder/decoder LSTM model with final dense layer softmax predictions
+    of next word. Uses LSTM encoder to generate cell and hidden state vector
+    to initialize decoder LSTM. Uses teacher forcing to avoid model instability
+    and slow training in decoder.
+    Args:
+        featureLanguageObj:         Language() obj for feature data
+        targetLanguageObj:          Language() obj for target data
+        latentDims:                 Number of latent dimensions for encoder
+                                        LSTM (aka. length of hidden and
+                                        cell vector) and initial state of
+                                        decoder LSTM.
+    Returns:
+        Non-compiled model of encoder/decoder LSTM.
     """
-    # clean sentence
-    cleanSentence = sentence.strip().lower()
-    # tokenize sentence
-    sentenceTokens = word_tokenize(cleanSentence, language=languageObj.name)
-    # find size of padding to reach maxSentLen
-    sentenceLength = len(sentenceTokens)
-    paddingLength = languageObj.maxSentLen - sentenceLength
-    assert (paddingLength >= 0), f'Sentence has length {sentenceLength}, but must be less than {languageObj.maxSentLen}.'
-    # make one-hot encodings of words
-    oneHots = [encode_word(word, languageObj) for word in sentenceTokens]
-    # make empty padding vectors
-    padding = [make_padding_vec(languageObj) for _ in range(paddingLength)]
-    encodedMatrix = np.array(oneHots + padding)
-    matrixShape = encodedMatrix.shape
-    expectedDims = (languageObj.vocabSize, languageObj.maxSentLen)
-    assert (matrixShape == expectedDims), f'Matrix has shape {matrixShape}, but should be {expectedDims}.'
-    return encodedMatrix
-
-
-def build_model():
-    inputs = keras.layers.Input(shape=(MAX_LEN, VOCAB_SIZE))
-    lstm = keras.layers.Bidirectional(keras.layers.LSTM(units=300))(inputs)
-    dense = keras.layers.Dense(units=1, activation='sigmoid')(lstm)
-    model = keras.models.Model(inputs=inputs, outputs=dense)
-    print(model.summary())
-    return model
-
-
-def build_encoder(latentDim=300):
-    # encoder
-    encoder_in = keras.layers.Input(shape=(None, VOCAB_SIZE), name='encoder_in')
-    encoder_lstm = keras.layers.LSTM(units=latentDim, return_state=True, name='encoder_lstm')
+    # cache language info from Language() objects
+    featureVocabSize = featureLanguageObj.vocabSize
+    targetVocabSize = targetLanguageObj.vocabSize
+    ## encoder architecture ##
+    # encoder takes one-hot vector of input word token
+    encoder_in = keras.layers.Input(shape=(None, featureVocabSize),
+                                    name='encoder_in')
+    # LSTM builds cell vector of size latentDims from inputs
+    encoder_lstm = keras.layers.LSTM(units=latentDims, return_state=True,
+                                    name='encoder_lstm')
     encoder_outputs, hidden_state, cell_state = encoder_lstm(encoder_in)
+    # pull just the hidden and cell state from the lstm
     encoder_states = [hidden_state, cell_state]
-    # decoder
-    decoder_in = keras.layers.Input(shape=(None, VOCAB_SIZE), name='decoder_in')
-    decoder_lstm = keras.layers.LSTM(units=latentDim, return_sequences=True, return_state=True, name='decoder_lstm')
-    decoder_outputs, _, _ = decoder_lstm(decoder_in, initial_state=encoder_states)
-    decoder_dense = keras.layers.Dense(units=VOCAB_SIZE, activation='softmax', name='decoder_dense')
+    ## decoder architecture ##
+    # decoder takes one-hot vector of correct word token (teach forcing)
+    decoder_in = keras.layers.Input(shape=(None, targetVocabSize),
+                                    name='decoder_in')
+    # LSTM builds cell vector of size latentDims from inputs and encoder states
+    decoder_lstm = keras.layers.LSTM(units=latentDims, return_sequences=True,
+                                    return_state=True, name='decoder_lstm')
+    decoder_outputs, _, _ = decoder_lstm(decoder_in,
+                                        initial_state=encoder_states)
+    # dense layer uses softmax activation for token prediction
+    decoder_dense = keras.layers.Dense(units=VOCAB_SIZE, activation='softmax',
+                                        name='decoder_dense')
     decoder_outputs = decoder_dense(decoder_outputs)
+    # model takes encoder and decoder inputs and predicts on decoder outputs
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
-    print(model.summary())
     return model
 
 
