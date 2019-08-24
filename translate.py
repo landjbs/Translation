@@ -8,7 +8,7 @@ FRENCH_PATH = 'fra-eng/fra.txt'
 class Language():
     """ Simple class to wrap information about a language """
 
-    def __init__(self, name, idxDict, vocabSize, maxSentLen):
+    def __init__(self, name, idxDict, vocabSize, maxSentLen, reverese=True):
         assert isinstance(name, str), 'name must have type str'
         assert isinstance(idxDict, dict), 'idxDict must have type dict'
         assert isinstance(vocabSize, int), 'vocbSize must have type int'
@@ -17,6 +17,10 @@ class Language():
         self.idxDict = idxDict
         self.vocabSize = vocabSize
         self.maxSentLen = maxSentLen
+        if reverese:
+            self.reverseIdx = self.reverseIdx()
+        else:
+            self.reverseIdx = None
 
     def __str__(self):
         return self.name
@@ -38,6 +42,10 @@ class Language():
         del self.idxDict[word]
         self.vocabSize -= 1
         return True
+
+    def reverse_idx(self):
+        """ Builds reverse idx mapping ids to words """
+        self.reverseIdx = {word : id for id, word in self.idxDict.items()}
 
 
 def build_idx_dict(vocabSet):
@@ -89,7 +97,7 @@ def build_language_objects(filePath, featureLanguage, targetLanguage,
     featureWords, targetWords = [], []
     with open(filePath, 'r') as translationFile:
         for i, line in enumerate(tqdm(translationFile)):
-            if i > 10:
+            if i > 1000:
                 break
             # separate between english and french translation
             featureSent, targetSent = split_and_clean_language_line(line=line,
@@ -244,6 +252,9 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
                                         activation='softmax',
                                         name='decoder_dense')
     decoder_outputs = decoder_dense(decoder_outputs)
+    # build dictionary of modle layers for using later
+    modelDict = {'encoder_in':encoder_in, 'encoder_states':encoder_states,
+                }
     # model takes encoder and decoder inputs and predicts on decoder outputs
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
     return model
@@ -262,13 +273,105 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     decoderTargets
 ) = encode_training_data(featureWords=featureWords, targetWords=targetWords,
                         featureLanguageObj=englishObj,
-                        targetLanguageObj=frenchObj, sampleNum=10)
+                        targetLanguageObj=frenchObj, sampleNum=1000)
+
 # build encoder/decoder model
-encoder_model = build_encoder_decoder(featureLanguageObj=englishObj,
-                                    targetLanguageObj=frenchObj)
+# model = build_encoder_decoder(featureLanguageObj=englishObj,
+#                                     targetLanguageObj=frenchObj)
+
+featureLanguageObj = englishObj
+targetLanguageObj = frenchObj
+latentDims = 300
+# cache language info from Language() objects
+featureVocabSize = featureLanguageObj.vocabSize
+targetVocabSize = targetLanguageObj.vocabSize
+## encoder architecture ##
+# encoder takes one-hot vector of input word token
+encoder_in = keras.layers.Input(shape=(None, featureVocabSize),
+                                name='encoder_in')
+# LSTM builds cell vector of size latentDims from inputs
+encoder_lstm = keras.layers.LSTM(units=latentDims, return_state=True,
+                                name='encoder_lstm')
+encoder_outputs, hidden_state, cell_state = encoder_lstm(encoder_in)
+# pull just the hidden and cell state from the lstm
+encoder_states = [hidden_state, cell_state]
+## decoder architecture ##
+# decoder takes one-hot vector of correct word token (teach forcing)
+decoder_in = keras.layers.Input(shape=(None, targetVocabSize),
+                                name='decoder_in')
+# LSTM builds cell vector of size latentDims from inputs and encoder states
+decoder_lstm = keras.layers.LSTM(units=latentDims, return_sequences=True,
+                                return_state=True, name='decoder_lstm')
+decoder_outputs, _, _ = decoder_lstm(decoder_in,
+                                    initial_state=encoder_states)
+# dense layer uses softmax activation for token prediction
+decoder_dense = keras.layers.Dense(units=targetVocabSize,
+                                    activation='softmax',
+                                    name='decoder_dense')
+decoder_outputs = decoder_dense(decoder_outputs)
+# build dictionary of modle layers for using later
+modelDict = {'encoder_in':encoder_in, 'encoder_states':encoder_states,
+            }
+# model takes encoder and decoder inputs and predicts on decoder outputs
+model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
+
+
 # compile model
-encoder_model.compile(optimizer='rmsprop',
+model.compile(optimizer='rmsprop',
                 loss='categorical_crossentropy',
                 metrics=['accuracy'])
 # fit the model
-encoder_model.fit([encoderFeatures, decoderFeatures], decoderTargets, epochs=10, validation_split=0.1)
+model.fit([encoderFeatures, decoderFeatures], decoderTargets, epochs=1, validation_split=0.1)
+
+## Sampling ##
+encoder_model = keras.models.Model(encoder_in, encoder_states)
+
+from keras.layers import Input
+
+
+decoder_state_input_h = Input(shape=(latentDims,))
+decoder_state_input_c = Input(shape=(latentDims,))
+decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+decoder_outputs, state_h, state_c = decoder_lstm(decoder_in, initial_state=decoder_states_inputs)
+decoder_states = [state_h, state_c]
+decoder_outputs = decoder_dense(decoder_outputs)
+decoder_model = keras.models.Model(
+    [decoder_in] + decoder_states_inputs,
+    [decoder_outputs] + decoder_states)
+
+def decode_sequence(input_seq):
+    # Encode the input as state vectors.
+    states_value = encoder_model.predict(input_seq)
+
+    # Generate empty target sequence of length 1.
+    target_seq = np.zeros((1, 1, num_decoder_tokens))
+    # Populate the first character of target sequence with the start character.
+    target_seq[0, 0, target_token_index['\t']] = 1.
+
+    # Sampling loop for a batch of sequences
+    # (to simplify, here we assume a batch of size 1).
+    stop_condition = False
+    decoded_sentence = ''
+    while not stop_condition:
+        output_tokens, h, c = decoder_model.predict(
+            [target_seq] + states_value)
+
+        # Sample a token
+        sampled_token_index = np.argmax(output_tokens[0, -1, :])
+        sampled_char = reverse_target_char_index[sampled_token_index]
+        decoded_sentence += sampled_char
+
+        # Exit condition: either hit max length
+        # or find stop character.
+        if (sampled_char == '\n' or
+           len(decoded_sentence) > max_decoder_seq_length):
+            stop_condition = True
+
+        # Update the target sequence (of length 1).
+        target_seq = np.zeros((1, 1, num_decoder_tokens))
+        target_seq[0, 0, sampled_token_index] = 1.
+
+        # Update states
+        states_value = [h, c]
+
+    return decoded_sentence
