@@ -293,6 +293,33 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     return model
 
 
+def compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets,
+                            model, epochs=10, validation_split=0.1,
+                            outPath=None):
+    """
+    Compiles and trains encoder/decoder model according to hyperparameters and
+    saves to outPath of given.
+    Args:
+            encoderFeatures:        Matrix of features for encoder training
+            decoderFeatures:        Matrix of features for decoder teaching
+            deocderTargets:         Matrix of targets for decoder training
+            model:                  Uncompiled encoder/decoder model
+            epochs:                 Number of epochs for which to train
+            validation_split:       Train/test split for model validation
+            outPath:                Path to which to save the model
+    """
+    # compile the model
+    model.compile(optimizer='rmsprop',
+                    loss='categorical_crossentropy',
+                    metrics=['accuracy'])
+    # train the model on input data
+    model.fit([encoderFeatures, decoderFeatures], decoderTargets,
+                epochs=epochs, validation_split=validation_split)
+    if outPath:
+        model.save(outPath)
+    return model
+
+
 # gather the data from file
 (englishObj,
     frenchObj,
@@ -309,52 +336,11 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
                         targetLanguageObj=frenchObj, sampleNum=1000)
 
 # build encoder/decoder model
-# model = build_encoder_decoder(featureLanguageObj=englishObj,
-#                                     targetLanguageObj=frenchObj)
+model = build_encoder_decoder(featureLanguageObj=englishObj,
+                                targetLanguageObj=frenchObj)
 
-featureLanguageObj = englishObj
-targetLanguageObj = frenchObj
-latentDims = 300
-# cache language info from Language() objects
-featureVocabSize = featureLanguageObj.vocabSize
-targetVocabSize = targetLanguageObj.vocabSize
-## encoder architecture ##
-# encoder takes one-hot vector of input word token
-encoder_in = keras.layers.Input(shape=(None, featureVocabSize),
-                                name='encoder_in')
-# LSTM builds cell vector of size latentDims from inputs
-encoder_lstm = keras.layers.LSTM(units=latentDims, return_state=True,
-                                name='encoder_lstm')
-encoder_outputs, hidden_state, cell_state = encoder_lstm(encoder_in)
-# pull just the hidden and cell state from the lstm
-encoder_states = [hidden_state, cell_state]
-## decoder architecture ##
-# decoder takes one-hot vector of correct word token (teach forcing)
-decoder_in = keras.layers.Input(shape=(None, targetVocabSize),
-                                name='decoder_in')
-# LSTM builds cell vector of size latentDims from inputs and encoder states
-decoder_lstm = keras.layers.LSTM(units=latentDims, return_sequences=True,
-                                return_state=True, name='decoder_lstm')
-decoder_outputs, _, _ = decoder_lstm(decoder_in,
-                                    initial_state=encoder_states)
-# dense layer uses softmax activation for token prediction
-decoder_dense = keras.layers.Dense(units=targetVocabSize,
-                                    activation='softmax',
-                                    name='decoder_dense')
-decoder_outputs = decoder_dense(decoder_outputs)
-# build dictionary of modle layers for using later
-modelDict = {'encoder_in':encoder_in, 'encoder_states':encoder_states,
-            }
-# model takes encoder and decoder inputs and predicts on decoder outputs
-model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
-
-
-# compile model
-model.compile(optimizer='rmsprop',
-                loss='categorical_crossentropy',
-                metrics=['accuracy'])
-# fit the model
-model.fit([encoderFeatures, decoderFeatures], decoderTargets, epochs=1, validation_split=0.1)
+# train model
+trainedModel = compile_and_train_model(enocderFeatures, decoderFeatures, decoderTargets, outPath='encoderDecoderModel.sav')
 
 ## Sampling ##
 encoder_model = keras.models.Model(encoder_in, encoder_states)
