@@ -16,6 +16,9 @@ class Language():
         self.maxSentLen = maxSentLen
 
     def __str__(self):
+        return self.name
+
+    def __repr__(self):
         return f'NAME={self.name}/VOCAB_SIZE={self.vocabSize}/MAX_LEN={self.maxSentLen}'
 
     def add_word(self, newWord):
@@ -65,10 +68,18 @@ def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
         targetLanguage              String of language for targets
         delimiter (*optional)       String of the delimiter separating
                                         features from targets defaults to tab
-
+        returnTrainData             Whether to return training data lists of
+                                        token lists for each sentence in
+                                        features and targets
     Returns:
         Language() object storing the attributes of each language
     """
+    # assertions
+    SUPPORTED_LANGUAGES = ['english', 'french']
+    assert (featureLanguage in SUPPORTED_LANGUAGES), f'{featureLanguage} is not supported'
+    assert (targetLanguage in SUPPORTED_LANGUAGES), f'{targetLanguage} is not supported'
+    assert isinstance(delimiter, str), 'delimiter must have type str'
+    assert isinstance(returnTrainData, bool), 'returnTrainData must have type bool'
     # build set of all the words (and punctuation) in each language
     englishVocab, frenchVocab = set(), set()
     maxEnglish, maxFrench = 0, 0
@@ -133,12 +144,28 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     # get lenght of one-hot vector in feature and target space
     featureVocabSize = featureLanguageObj.vocabSize
     targetVocabSize = targetLanguageObj.vocabSize
-    # initialize empty arrays for encoder features, decoder features, and targets
-    encoderFeatures = np.zeros(shape=(sampleNum, featureSentLen, featureVocabSize))
-    decoderFeatures = np.zeros(shape=(sampleNum, targetSentLen, targetVocabSize))
+    # tuple of shapes for encoder inputs and decoder inputs and targets
+    encoderInputShape = (sampleNum, featureSentLen, featureVocabSize)
+    decoderInputShape = (sampleNum, targetSentLen, targetVocabSize)
+    # initialize empty 3D arrays for training data
+    encoderFeatures = np.zeros(shape=encoderInputShape)
+    decoderFeatures = np.zeros(shape=decoderInputShape)
+    decoderTargets = np.zeros(shape=decoderInputShape)
+    # cache idx dict for each language
+    featureIdxDict = featureLanguageObj.idxDict
+    targetIdxDict = targetLanguageObj.idxDict
     # iterate over features and targets, building encoded arrays
-    for i, (features, targets) in enumerate():
-
+    for sentNum, (featureSent, targetSent) in enumerate(zip(featureWords, targetWords)):
+        # iterate over current feature sentence building 2D matrix of one-hot
+        # encoded vectors of each word
+        for wordNum, word in enumerate(featureSent):
+            wordId = featureIdxDict[word]
+            encoderFeatures[sentNum, wordNum, wordId] = 1
+        # iterate over target sentence building one-hot matrix for decoder
+        # inputs for teacher forcing and targets for decoder output advanced
+        # one time step into the future
+        for wordNum, word in enumerate(targetSent):
+            
 
 
 
