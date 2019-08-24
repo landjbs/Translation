@@ -3,8 +3,10 @@ import numpy as np
 from tqdm import tqdm
 from nltk.tokenize import word_tokenize
 
+
 class Language():
-    """ Simple class to wrap information about a languae """
+    """ Simple class to wrap information about a language """
+
     def __init__(self, name, idxDict, vocabSize, maxSentLen):
         assert isinstance(name, str), 'name must have type str'
         assert isinstance(idxDict, dict), 'idxDict must have type dict'
@@ -87,11 +89,16 @@ def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
     with open(filePath, 'r') as translationFile:
         for line in tqdm(translationFile):
             # separate between english and french translation
-            english, french = split_and_clean_language_line(line=line,
+            featureSent, targetSent = split_and_clean_language_line(line=line,
                                                             delimiter=delimiter)
+            # pad sentence beginnings and ends
+            paddedFeatureSent = pad_sentence_ends(featureSent)
+            paddedTargetSent = pad_sentence_ends(targetSents)
             # tokenize words in each language
-            englishLineWords = word_tokenize(english, language='english')
-            frenchLineWords = word_tokenize(french, language='french')
+            englishLineWords = word_tokenize(text=paddedFeatureSent,
+                                            language=featureLanguage)
+            frenchLineWords = word_tokenize(text=paddedTargetSent,
+                                            language=targetLanguage)
             # update vocab sets
             for englishWord in englishLineWords:
                 englishVocab.add(englishWord)
@@ -236,6 +243,11 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     # model takes encoder and decoder inputs and predicts on decoder outputs
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
     return model
+
+
+
+encoder_model = build_encoder_decoder()
+
 
 
 model = build_encoder()
