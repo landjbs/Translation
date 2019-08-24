@@ -39,11 +39,11 @@ def build_idx_dict(vocabSet):
     return {word : i for i, word in enumerate(vocabSet)}
 
 
-def split_and_clean_language_line(line):
+def split_and_clean_language_line(line, delimiter):
     # clean and lower line
     cleanLine = line.strip().lower()
     # separate between original language and translation
-    original, translation = cleanLine.split("\t")
+    original, translation = cleanLine.split(delimiter)
     return original, translation
 
 
@@ -53,10 +53,19 @@ def pad_sentence_ends(sentence, startToken='START', endToken='END'):
     return f'{startToken} {sentence} {endToken}'
 
 
-def build_language_objects(filePath='fra-eng/fra.txt', returnTrainData=True):
+def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
+                        targetLanguage, delimiter='\t', returnTrainData=True):
     """
     Builds dicts mapping words to unique int id and finds max line length
     in each language for padding one-hot vecs
+    Args:
+        filePath                     Path to the file containing feature and
+                                        translated text
+        featureLanguage             String of language for features
+        targetLanguage              String of language for targets
+        delimiter (*optional)       String of the delimiter separating
+                                        features from targets defaults to tab
+
     Returns:
         Language() object storing the attributes of each language
     """
@@ -67,7 +76,8 @@ def build_language_objects(filePath='fra-eng/fra.txt', returnTrainData=True):
     with open(filePath, 'r') as translationFile:
         for line in tqdm(translationFile):
             # separate between english and french translation
-            english, french = split_and_clean_language_line(line)
+            english, french = split_and_clean_language_line(line=line,
+                                                            delimiter=delimiter)
             # tokenize words in each language
             englishLineWords = word_tokenize(english, language='english')
             frenchLineWords = word_tokenize(french, language='french')
@@ -99,8 +109,36 @@ def build_language_objects(filePath='fra-eng/fra.txt', returnTrainData=True):
         return englishObj, frenchObj, featureWords, targetWords
 
 
-def encode_training_data(featureWords, targetWords):
-    """ Encodes matrix of raw unpadded feature and target words """
+def encode_training_data(featureWords, targetWords, featureLanguageObj,
+                        targetLanguageObj, sampleCap=None):
+    """
+    Encodes matrix of raw unpadded feature and target words
+    Args:
+        featureWords:           List of token lists for each original sentence
+        targetWords:            List of token lists for each target sentence
+        featureLanguageObj      Language() object of feature language
+        targetLanguageObj       Language() object of target language
+        sampleCap (*optional)   Maximum number of samples to encode;
+                                    defaults to None: all will be encoded
+    """
+    # assertions and formatting
+    if not sampleCap:
+        sampleCap = (len(featureWords) + 1)
+    assert isinstance(sampleCap, int), 'sampleCap mut have type int'
+    assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
+    assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
+    # get length of each sentence matrix in feature and target space
+    featureSentLen = featureLanguageObj.maxSentLen
+    targetSentLen = targetLanguageObj.maxSentLen
+    # get lenght of one-hot vector in feature and target space
+    featureVocabSize = featureLanguageObj.vocabSize
+    targetVocabSize = targetLanguageObj.vocabSize
+    # initialize empty arrays for encoder features, decoder features, and targets
+    encoderFeatures = np.zeros(shape=(sampleNum, featureSentLen, featureVocabSize))
+    decoderFeatures = np.zeros(shape=(sampleNum, targetSentLen, targetVocabSize))
+    # iterate over features and targets, building encoded arrays
+    for i, (features, targets) in enumerate():
+
 
 
 
