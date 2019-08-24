@@ -3,6 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from nltk.tokenize import word_tokenize
 
+FRENCH_PATH = 'fra-eng/fra.txt'
 
 class Language():
     """ Simple class to wrap information about a language """
@@ -58,8 +59,8 @@ def pad_sentence_ends(sentence, startToken='START', endToken='END'):
     return f'{startToken} {sentence} {endToken}'
 
 
-def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
-                        targetLanguage, delimiter='\t', returnTrainData=True):
+def build_language_objects(filePath, featureLanguage, targetLanguage,
+                            delimiter='\t', returnTrainData=True):
     """
     Builds dicts mapping words to unique int id and finds max line length
     in each language for padding one-hot vecs
@@ -87,13 +88,15 @@ def build_language_objects(filePath='fra-eng/fra.txt', featureLanguage,
     maxEnglish, maxFrench = 0, 0
     featureWords, targetWords = [], []
     with open(filePath, 'r') as translationFile:
-        for line in tqdm(translationFile):
+        for i, line in enumerate(tqdm(translationFile)):
+            if i > 10:
+                break
             # separate between english and french translation
             featureSent, targetSent = split_and_clean_language_line(line=line,
                                                             delimiter=delimiter)
             # pad sentence beginnings and ends
             paddedFeatureSent = pad_sentence_ends(featureSent)
-            paddedTargetSent = pad_sentence_ends(targetSents)
+            paddedTargetSent = pad_sentence_ends(targetSent)
             # tokenize words in each language
             englishLineWords = word_tokenize(text=paddedFeatureSent,
                                             language=featureLanguage)
@@ -157,7 +160,7 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     # assertions and formatting
     if not sampleNum:
         sampleNum = (len(featureWords) + 1)
-    assert isinstance(sampleCap, int), 'sampleCap mut have type int'
+    assert isinstance(sampleNum, int), 'sampleNum mut have type int'
     assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
     assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
     # get length of each sentence matrix in feature and target space
@@ -170,16 +173,16 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     encoderInputShape = (sampleNum, featureSentLen, featureVocabSize)
     decoderInputShape = (sampleNum, targetSentLen, targetVocabSize)
     # initialize empty 3D arrays for training data
-    encoderFeatures     =   np.zeros(shape=encoderInputShape, dtype='int.32')
-    decoderFeatures     =   np.zeros(shape=decoderInputShape, dtype='int.32')
-    decoderTargets      =   np.zeros(shape=decoderInputShape, dtype='int.32')
+    encoderFeatures     =   np.zeros(shape=encoderInputShape, dtype='int32')
+    decoderFeatures     =   np.zeros(shape=decoderInputShape, dtype='int32')
+    decoderTargets      =   np.zeros(shape=decoderInputShape, dtype='int32')
     # cache idx dict for each language
     featureIdxDict  =   featureLanguageObj.idxDict
     targetIdxDict   =   targetLanguageObj.idxDict
     # iterate over features and targets, building encoded arrays
     for sentNum, (featureSent, targetSent) in tqdm(enumerate(zip(featureWords,
                                                                 targetWords))):
-        if sentNum > sampleNum:
+        if sentNum >= sampleNum:
             break
         # iterate over current feature sentence building 2D matrix of one-hot
         # encoded vectors of each word
@@ -237,7 +240,8 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     decoder_outputs, _, _ = decoder_lstm(decoder_in,
                                         initial_state=encoder_states)
     # dense layer uses softmax activation for token prediction
-    decoder_dense = keras.layers.Dense(units=VOCAB_SIZE, activation='softmax',
+    decoder_dense = keras.layers.Dense(units=targetVocabSize,
+                                        activation='softmax',
                                         name='decoder_dense')
     decoder_outputs = decoder_dense(decoder_outputs)
     # model takes encoder and decoder inputs and predicts on decoder outputs
@@ -245,24 +249,26 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     return model
 
 
-
-encoder_model = build_encoder_decoder()
-
-
-
-model = build_encoder()
-model.compile(optimizer='rmsprop',
+# gather the data from file
+(englishObj,
+    frenchObj,
+    featureWords,
+    targetWords
+) = build_language_objects(filePath=FRENCH_PATH, featureLanguage='english',
+                        targetLanguage='french', returnTrainData=True)
+# encode the data
+(encoderFeatures,
+    decoderFeatures,
+    decoderTargets
+) = encode_training_data(featureWords=featureWords, targetWords=targetWords,
+                        featureLanguageObj=englishObj,
+                        targetLanguageObj=frenchObj, sampleNum=10)
+# build encoder/decoder model
+encoder_model = build_encoder_decoder(featureLanguageObj=englishObj,
+                                    targetLanguageObj=frenchObj)
+# compile model
+encoder_model.compile(optimizer='rmsprop',
                 loss='categorical_crossentropy',
                 metrics=['accuracy'])
-
-model.fit([features, features], features, epochs=10, validation_split=0.1)
-
-
-# model = build_model()
-# model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['accuracy'])
-# model.fit(features, targets, epochs=100)
-#
-# while True:
-#     sent = input('sent: ')
-#     sentVec = np.expand_dims(encode_sent(sent), axis=0)
-#     print(model.predict(sentVec))
+# fit the model
+encoder_model.fit([encoderFeatures, decoderFeatures], decoderTargets, epochs=10, validation_split=0.1)
