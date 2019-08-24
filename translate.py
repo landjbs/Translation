@@ -298,8 +298,8 @@ def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
     decoderFeatures     =   np.zeros(shape=decoderInputShape, dtype='int32')
     decoderTargets      =   np.zeros(shape=decoderTargetShape, dtype='int32')
     # iterate over features and targets, building dense matrix with padding
-    for sentNum, (featureSent, targetSent) in enumerate(zip(featureWords,
-                                                            targetWords)):
+    for sentNum, (featureSent, targetSent) in tqdm(enumerate(zip(featureWords,
+                                                                targetWords))):
         for wordNum, word in enumerate(featureSent):
             wordId = featureIdx[word]
             encoderFeatures[sentNum, wordNum] = wordId
@@ -388,7 +388,7 @@ def build_one_hot_encoder_decoder(featureLanguageObj, targetLanguageObj,
 
 
 def build_embedding_encoder_decoder(featureLanguageObj, targetLanguageObj,
-                                latentDims=300):
+                                    latentDims=300):
     """
     Builds encoder/decoder LSTM model for training on scalar word id with
     final dense layer softmax predictions of next word across vocabSize vector.
@@ -415,22 +415,23 @@ def build_embedding_encoder_decoder(featureLanguageObj, targetLanguageObj,
     # embedding layer builds dense vectors of latentDims from input ids
     encoder_embeddings = keras.layers.Embedding(input_dim=featureVocabSize,
                                             output_dim=latentDims)(encoder_in)
-    encoder_outputs, state_h, state_c = LSTM(units=latentDims,
-                                            return_state=True)(encoder_embeddings)
+    encoder_lstm = keras.layers.LSTM(units=latentDims, return_state=True,
+                                    name='encoder_lstm')
+    encoder_outputs, hidden_state, cell_state = encoder_lstm(encoder_embeddings)
     # pull just the hidden and cell state from the lstm
     encoder_states = [hidden_state, cell_state]
     ## decoder architecture ##
     # decoder takes scalar id of correct token (teach forcing)
     decoder_in = keras.layers.Input(shape=(None,), name='decoder_in')
     # embedding layer builds dense vectors of latentDims in target language
-    decoder_embedding = keras.layer.Embedding(input_dim=targetVocabSize,
+    decoder_embedding = keras.layers.Embedding(input_dim=targetVocabSize,
                                             output_dim=latentDims)(decoder_in)
-    decoder_outputs = keras.layers.LSTM(units=latentDims,
-                                    return_sequences=True)(decoder_embedding,
-                                                initial_state=encoder_states)
+    decoder_lstm = keras.layers.LSTM(units=latentDims, return_sequences=True,
+                                    name='decoder_lstm')
+    decoder_outputs = decoder_lstm(decoder_embedding, initial_state=encoder_states)
     # dense layer uses softmax for token prediction across one-hot vectors
-    decoder_dense = keras.layer.Dense(units=targetVocabSize,
-                                    activation='softmax')
+    decoder_dense = keras.layers.Dense(units=targetVocabSize,
+                                        activation='softmax')
     decoder_outputs = decoder_dense(decoder_outputs)
     # build and return model
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
@@ -475,14 +476,14 @@ def compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets,
 (encoderFeatures,
     decoderFeatures,
     decoderTargets
-) = encode_training_data(featureWords=featureWords, targetWords=targetWords,
-                        featureLanguageObj=englishObj,
-                        targetLanguageObj=frenchObj)
+) = id_encode_training_data(featureWords=featureWords, targetWords=targetWords,
+                            featureLanguageObj=englishObj,
+                            targetLanguageObj=frenchObj)
 
 # build encoder/decoder model
-model = build_encoder_decoder(featureLanguageObj=englishObj,
-                                targetLanguageObj=frenchObj)
-
+model = build_embedding_encoder_decoder(featureLanguageObj=englishObj,
+                                        targetLanguageObj=frenchObj)
+print(model.summary())
 # train model
 trainedModel = compile_and_train_model(encoderFeatures,
                                         decoderFeatures,
