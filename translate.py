@@ -17,10 +17,7 @@ class Language():
         self.idxDict = idxDict
         self.vocabSize = vocabSize
         self.maxSentLen = maxSentLen
-        if reverese:
-            self.reverseIdx = self.reverseIdx()
-        else:
-            self.reverseIdx = None
+        self.reverseIdx = None
 
     def __str__(self):
         return self.name
@@ -53,9 +50,14 @@ def build_idx_dict(vocabSet):
     return {word : i for i, word in enumerate(vocabSet)}
 
 
+def clean_text(text):
+    """ Cleans and lower-cases text """
+    return text.strip().lower()
+
+
 def split_and_clean_language_line(line, delimiter):
     # clean and lower line
-    cleanLine = line.strip().lower()
+    cleanLine = clean_text(line)
     # separate between original language and translation
     original, translation = cleanLine.split(delimiter)
     return original, translation
@@ -132,10 +134,29 @@ def build_language_objects(filePath, featureLanguage, targetLanguage,
                         vocabSize=englishVocabSize, maxSentLen=maxEnglish)
     frenchObj = Language(name='french', idxDict=frenchIdxDict,
                         vocabSize=frenchVocabSize, maxSentLen=maxFrench)
+    # build reverse idx for language objects
+    englishObj.reverse_idx()
+    frenchObj.reverse_idx()
+    # return either language objs or language objs and train data
     if not returnTrainData:
         return englishObj, frenchObj
     else:
         return englishObj, frenchObj, featureWords, targetWords
+
+
+def encode_sentence(sentence, languageObj):
+    """
+    Encodes single sentence in languageObj language. Not used during training
+    preprocessing for efficiency but used during prediction.
+    Args:
+        sentence:       Raw text of sentence
+        languageObj:    Language() object of sentence language
+    Returns:
+        Matrix of shape (maxSentLen, vocabSize) comprising one-hot encodings
+        of sentence.
+    """
+    cleanSentence = clean_text(sentence)
+
 
 
 def encode_training_data(featureWords, targetWords, featureLanguageObj,
