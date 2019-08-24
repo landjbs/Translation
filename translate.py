@@ -257,17 +257,17 @@ def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
                                     sentence, padded up to maxSentLen. Used
                                     to train encoder LSTM cell and hidden
                                     states with previous Embedding layer.
-                                    Shape is (sampleNum, featureSentLen,
-                                    featureVocabSize).
+                                    Shape is (sampleNum, featureSentLen).
         decoderFeatures:        Numpy matrix of word ids for each word in
                                     sentence, padded up to maxSentLen. Used as
                                     input to decoder LSTM for teacher forcing
                                     training speed improvement. Shape is
-                                    (sampleNum, targetSentLen, targetVocabSize)
+                                    (sampleNum, targetSentLen).
         decoderTargets:         Numpy matrix of word ids for each word in
                                     sentence, padded up to maxSentLen. Used as
                                     final prediction target for decoder LSTM
-                                    (and model).
+                                    (and model). Shape is (sampleNum,
+                                    targetSentLen).
 
     """
     # assertions and formatting
@@ -282,10 +282,25 @@ def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
     # cache idx dict for each language
     featureIdx  =   featureLanguageObj.idxDict
     targetIdx   =   targetLanguageObj.idxDict
-    # build empty numpy arrays to hold word ids
+    # tuple of shapes for encoder inputs and decoder inputs and targets
+    encoderInputShape = (sampleNum, featureSentLen)
+    decoderInputShape = (sampleNum, targetSentLen)
+    # initialize empty 3D arrays for training data
+    encoderFeatures     =   np.zeros(shape=encoderInputShape, dtype='int32')
+    decoderFeatures     =   np.zeros(shape=decoderInputShape, dtype='int32')
+    decoderTargets      =   np.zeros(shape=decoderInputShape, dtype='int32')
     # iterate over features and targets, building dense matrix with padding
-    for i, (feature_sentence, target_sentence) in enumerate(zip(featureWords, targetWords)):
-
+    for sentNum, (featureSent, targetSent) in enumerate(zip(featureWords,
+                                                            targetWords)):
+        for wordNum, word in enumerate(featureSent):
+            wordId = featureIdx[word]
+            encoderFeatures[sentNum, wordNum] = wordId
+        for wordNum, word in enumerate(targetSent):
+            wordId = targetIdx[word]
+            decoderFeatures[sentNum, wordNum] = wordId
+            if wordNum > 0:
+                decoderTargets[sentNum, (wordNum - 1)] = wordId
+    return encoderFeatures, decoderFeatures, decoderTargets
 
 
 def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300):
