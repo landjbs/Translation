@@ -99,8 +99,6 @@ def build_language_objects(filePath, featureLanguage, targetLanguage,
     featureWords, targetWords = [], []
     with open(filePath, 'r') as translationFile:
         for i, line in enumerate(tqdm(translationFile)):
-            if i > 1000:
-                break
             # separate between english and french translation
             featureSent, targetSent = split_and_clean_language_line(line=line,
                                                             delimiter=delimiter)
@@ -171,8 +169,8 @@ def encode_sentence(sentence, languageObj):
     return sentenceMatrix
 
 
-def encode_training_data(featureWords, targetWords, featureLanguageObj,
-                        targetLanguageObj, sampleNum=None):
+def one_hot_encode_training_data(featureWords, targetWords, featureLanguageObj,
+                                targetLanguageObj, sampleNum=None):
     """
     Encodes matrix of raw unpadded feature and target words
     Args:
@@ -193,6 +191,7 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
                                     input to decoder LSTM for teacher forcing
                                     training speed improvement. Shape is
                                     (sampleNum, targetSentLen, targetVocabSize)
+
         decoderTargets:        Numpy matrix of one-hot encoded words advanced
                                     by one time step with respect to
                                     decoderFeatures. Used as final prediction
@@ -204,10 +203,10 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     assert isinstance(sampleNum, int), 'sampleNum mut have type int'
     assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
     assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
-    # get length of each sentence matrix in feature and target space
+    # cache length of each sentence matrix in feature and target space
     featureSentLen  =   featureLanguageObj.maxSentLen
     targetSentLen   =   targetLanguageObj.maxSentLen
-    # get lenght of one-hot vector in feature and target space
+    # cache length of one-hot vector in feature and target space
     featureVocabSize    =   featureLanguageObj.vocabSize
     targetVocabSize     =   targetLanguageObj.vocabSize
     # tuple of shapes for encoder inputs and decoder inputs and targets
@@ -242,6 +241,53 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     return encoderFeatures, decoderFeatures, decoderTargets
 
 
+def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
+                                targetLanguageObj, sampleNum=None):
+    """
+    Encodes feature and target words as dense, padded matrix of word ids
+    Args:
+        featureWords:           List of token lists for each original sentence
+        targetWords:            List of token lists for each target sentence
+        featureLanguageObj:     Language() object of feature language
+        targetLanguageObj:      Language() object of target language
+        sampleNum (*optional):  Maximum number of samples to encode;
+                                    defaults to None: all will be encoded
+    Returns:
+        encoderFeatures:        Numpy matrix of word ids for each word in
+                                    sentence, padded up to maxSentLen. Used
+                                    to train encoder LSTM cell and hidden
+                                    states with previous Embedding layer.
+                                    Shape is (sampleNum, featureSentLen,
+                                    featureVocabSize).
+        decoderFeatures:        Numpy matrix of word ids for each word in
+                                    sentence, padded up to maxSentLen. Used as
+                                    input to decoder LSTM for teacher forcing
+                                    training speed improvement. Shape is
+                                    (sampleNum, targetSentLen, targetVocabSize)
+        decoderTargets:         Numpy matrix of word ids for each word in
+                                    sentence, padded up to maxSentLen. Used as
+                                    final prediction target for decoder LSTM
+                                    (and model).
+
+    """
+    # assertions and formatting
+    if not sampleNum:
+        sampleNum = (len(featureWords) + 1)
+    assert isinstance(sampleNum, int), 'sampleNum mut have type int'
+    assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
+    assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
+    # cache length of each sentence matrix in feature and target space
+    featureSentLen  =   featureLanguageObj.maxSentLen
+    targetSentLen   =   targetLanguageObj.maxSentLen
+    # cache idx dict for each language
+    featureIdx  =   featureLanguageObj.idxDict
+    targetIdx   =   targetLanguageObj.idxDict
+    # build empty numpy arrays to hold word ids
+    # iterate over features and targets, building dense matrix with padding
+    for i, (feature_sentence, target_sentence) in enumerate(zip(featureWords, targetWords)):
+
+
+
 def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300):
     """
     Builds encoder/decoder LSTM model with final dense layer softmax predictions
@@ -262,9 +308,9 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     featureVocabSize = featureLanguageObj.vocabSize
     targetVocabSize = targetLanguageObj.vocabSize
     ## encoder architecture ##
-    # encoder takes one-hot vector of input word token
-    encoder_in = keras.layers.Input(shape=(None, featureVocabSize),
-                                    name='encoder_in')
+    # encoder takes scalar id of token
+    encoder_in = keras.layers.Input(shape=(None,), name='encoder_in')
+    # embedding layer builds embedding vectors from input ids
     # LSTM builds cell vector of size latentDims from inputs
     encoder_lstm = keras.layers.LSTM(units=latentDims, return_state=True,
                                     name='encoder_lstm')
@@ -333,14 +379,19 @@ def compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets,
     decoderTargets
 ) = encode_training_data(featureWords=featureWords, targetWords=targetWords,
                         featureLanguageObj=englishObj,
-                        targetLanguageObj=frenchObj, sampleNum=1000)
+                        targetLanguageObj=frenchObj)
 
 # build encoder/decoder model
 model = build_encoder_decoder(featureLanguageObj=englishObj,
                                 targetLanguageObj=frenchObj)
 
 # train model
-trainedModel = compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets, model, outPath='encoderDecoderModel.sav')
+trainedModel = compile_and_train_model(encoderFeatures,
+                                        decoderFeatures,
+                                        decoderTargets,
+                                        model,
+                                        epochs=100,
+                                        outPath='encoderDecoderModel.sav')
 
 
 # import keras
