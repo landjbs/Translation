@@ -46,11 +46,14 @@ def split_and_clean_language_line(line):
     original, translation = cleanLine.split("\t")
     return original, translation
 
-def pad_sentence_ends(sentence, startPad='START', endPad='END'):
-    assert isinstance(sentence, str), 'sentence must have type str'
-    return f'{startPad} {sentence} {endPad}'
 
-def build_language_objects(filePath='fra-eng/fra.txt'):
+def pad_sentence_ends(sentence, startToken='START', endToken='END'):
+    """ Pads raw text sentence with start and end tokens """
+    assert isinstance(sentence, str), 'sentence must have type str'
+    return f'{startToken} {sentence} {endToken}'
+
+
+def build_language_objects(filePath='fra-eng/fra.txt', returnTrainData=True):
     """
     Builds dicts mapping words to unique int id and finds max line length
     in each language for padding one-hot vecs
@@ -60,6 +63,7 @@ def build_language_objects(filePath='fra-eng/fra.txt'):
     # build set of all the words (and punctuation) in each language
     englishVocab, frenchVocab = set(), set()
     maxEnglish, maxFrench = 0, 0
+    featureWords, targetWords = [], []
     with open(filePath, 'r') as translationFile:
         for line in tqdm(translationFile):
             # separate between english and french translation
@@ -75,6 +79,9 @@ def build_language_objects(filePath='fra-eng/fra.txt'):
             # update max lengths
             maxEnglish = max(maxEnglish, len(englishLineWords))
             maxFrench = max(maxFrench, len(frenchLineWords))
+            # update feature and target word lists
+            featureWords.append(englishLineWords)
+            targetWords.append(frenchLineWords)
     # build dict mapping each word to a unique int id
     englishIdxDict = build_idx_dict(englishVocab)
     frenchIdxDict = build_idx_dict(frenchVocab)
@@ -86,7 +93,15 @@ def build_language_objects(filePath='fra-eng/fra.txt'):
                         vocabSize=englishVocabSize, maxSentLen=maxEnglish)
     frenchObj = Language(name='french', idxDict=frenchIdxDict,
                         vocabSize=frenchVocabSize, maxSentLen=maxFrench)
-    return englishObj, frenchObj
+    if not returnTrainData:
+        return englishObj, frenchObj
+    else:
+        return englishObj, frenchObj, featureWords, targetWords
+
+
+def encode_training_data(featureWords, targetWords):
+    """ Encodes matrix of raw unpadded feature and target words """
+
 
 
 def encode_word(word, languageObj):
@@ -126,12 +141,6 @@ def encode_sentence(sentence, language):
     return encodedMatrix
 
 
-def read_translation_file(filePath='fra-eng/fra.txt'):
-    with open(filePath, 'r') as translationFile:
-        for line in translationFile:
-            english, french = line.split("\t")
-read_translation_file()
-
 def build_model():
     inputs = keras.layers.Input(shape=(MAX_LEN, VOCAB_SIZE))
     lstm = keras.layers.Bidirectional(keras.layers.LSTM(units=300))(inputs)
@@ -139,6 +148,7 @@ def build_model():
     model = keras.models.Model(inputs=inputs, outputs=dense)
     print(model.summary())
     return model
+
 
 def build_encoder(latentDim=300):
     # encoder
@@ -155,6 +165,7 @@ def build_encoder(latentDim=300):
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
     print(model.summary())
     return model
+
 
 model = build_encoder()
 model.compile(optimizer='rmsprop',
