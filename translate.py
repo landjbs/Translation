@@ -127,10 +127,25 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     Args:
         featureWords:           List of token lists for each original sentence
         targetWords:            List of token lists for each target sentence
-        featureLanguageObj      Language() object of feature language
-        targetLanguageObj       Language() object of target language
-        sampleCap (*optional)   Maximum number of samples to encode;
+        featureLanguageObj:     Language() object of feature language
+        targetLanguageObj:      Language() object of target language
+        sampleCap (*optional):  Maximum number of samples to encode;
                                     defaults to None: all will be encoded
+    Returns:
+        encoderFeatures:        Numpy matrix of one-hot encoded words for each
+                                    sentence padded to maxSentLen. Used to train
+                                    encoder LSTM cell and hidden states. Shape
+                                    is (sampleNum, featureSentLen,
+                                    featureVocabSize)
+        decoderFeatures:       Numpy matrix of one-hot encoded words for each
+                                    sentence padded to maxSentLen. Used as
+                                    input to decoder LSTM for teacher forcing
+                                    training speed improvement. Shape is
+                                    (sampleNum, targetSentLen, targetVocabSize)
+        decoderTargets:        Numpy matrix of one-hot encoded words advanced
+                                    by one time step with respect to
+                                    decoderFeatures. Used as final prediction
+                                    target for decoder LSTM (and model).
     """
     # assertions and formatting
     if not sampleCap:
@@ -155,7 +170,8 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
     featureIdxDict  =   featureLanguageObj.idxDict
     targetIdxDict   =   targetLanguageObj.idxDict
     # iterate over features and targets, building encoded arrays
-    for sentNum, (featureSent, targetSent) in enumerate(zip(featureWords, targetWords)):
+    for sentNum, (featureSent, targetSent) in tqdm(enumerate(zip(featureWords,
+                                                                targetWords))):
         # iterate over current feature sentence building 2D matrix of one-hot
         # encoded vectors of each word
         for wordNum, word in enumerate(featureSent):
@@ -165,7 +181,12 @@ def encode_training_data(featureWords, targetWords, featureLanguageObj,
         # inputs for teacher forcing and targets for decoder output advanced
         # one time step into the future
         for wordNum, word in enumerate(targetSent):
-
+            wordId = targetIdxDict[word]
+            decoderFeatures[sentNum, wordNum, wordId] = 1
+            # decoder target will be the same word but one time-step ahead
+            if wordNum > 0:
+                decoderTargets[sentNum, (wordNum - 1), wordId] = 1
+    return encoderFeatures, decoderFeatures, decoderTargets
 
 
 
