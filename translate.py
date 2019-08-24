@@ -242,7 +242,7 @@ def one_hot_encode_training_data(featureWords, targetWords, featureLanguageObj,
 
 
 def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
-                                targetLanguageObj, sampleNum=None):
+                            targetLanguageObj, sampleNum=None):
     """
     Encodes feature and target words as dense, padded matrix of word ids
     Args:
@@ -303,12 +303,39 @@ def id_encode_training_data(featureWords, targetWords, featureLanguageObj,
     return encoderFeatures, decoderFeatures, decoderTargets
 
 
-def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300):
+# def bert_encode_training_data(featureWords, targetWords, featureLanguageObj,
+#                             targetLanguageObj, sampleNum=None):
+#     """
+#     Encodes feature and target words as contextual BERT-embeddings in feature
+#     language for decoding and simpler model architecture.
+#     Args:
+#         featureWords:           List of token lists for each original sentence
+#         targetWords:            List of token lists for each target sentence
+#         featureLanguageObj:     Language() object of feature language
+#         targetLanguageObj:      Language() object of target language
+#         sampleNum (*optional):  Maximum number of samples to encode;
+#                                     defaults to None: all will be encoded
+#     Returns:
+#         encoder
+#     """
+#     # assertions and formatting
+#     if not sampleNum:
+#         sampleNum = (len(featureWords) + 1)
+#     assert isinstance(sampleNum, int), 'sampleNum mut have type int'
+#     assert isinstance(featureLanguageObj, Language), 'featureLanguageObj must have type Language()'
+#     assert isinstance(targetLanguageObj, Language), 'targetLanguageObj must have type Language()'
+#     assert (featureLanguageObj.name == 'english'), f'{featureLanguageObj.name} is not supported by current BERT model'
+    #
+
+def build_one_hot_encoder_decoder(featureLanguageObj, targetLanguageObj,
+                                latentDims=300):
     """
-    Builds encoder/decoder LSTM model with final dense layer softmax predictions
-    of next word. Uses LSTM encoder to generate cell and hidden state vector
-    to initialize decoder LSTM. Uses teacher forcing to avoid model instability
-    and slow training in decoder.
+    Builds encoder/decoder LSTM model for training on one-hot word vectors with
+    final dense layer softmax predictions of next word. Uses LSTM encoder to
+    generate cell and hidden state vector to initialize decoder LSTM. Uses
+    teacher forcing to avoid model instability and slow decoder training.
+    Training on one-hot vectors across vocabSize takes a lot of compute and
+    is not recommended for word level models.
     Args:
         featureLanguageObj:         Language() obj for feature data
         targetLanguageObj:          Language() obj for target data
@@ -352,6 +379,9 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
     # model takes encoder and decoder inputs and predicts on decoder outputs
     model = keras.models.Model([encoder_in, decoder_in], decoder_outputs)
     return model
+
+
+def build_embedding_encoder_decoder():
 
 
 def compile_and_train_model(encoderFeatures, decoderFeatures, decoderTargets,
