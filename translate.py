@@ -4,6 +4,7 @@ from tqdm import tqdm
 from nltk.tokenize import word_tokenize
 
 FRENCH_PATH = 'fra-eng/fra.txt'
+SUPPORTED_LANGUAGES = ['english', 'french']
 
 class Language():
     """ Simple class to wrap information about a language """
@@ -88,7 +89,6 @@ def build_language_objects(filePath, featureLanguage, targetLanguage,
         Language() object storing the attributes of each language
     """
     # assertions
-    SUPPORTED_LANGUAGES = ['english', 'french']
     assert (featureLanguage in SUPPORTED_LANGUAGES), f'{featureLanguage} is not supported'
     assert (targetLanguage in SUPPORTED_LANGUAGES), f'{targetLanguage} is not supported'
     assert isinstance(delimiter, str), 'delimiter must have type str'
@@ -155,8 +155,20 @@ def encode_sentence(sentence, languageObj):
         Matrix of shape (maxSentLen, vocabSize) comprising one-hot encodings
         of sentence.
     """
+    # assertions
+    assert isinstance(sentence, str), 'sentence must have type str'
+    assert isinstance(languageObj, Language), 'languageObj must have type Language()'
+    assert (languageObj.name in SUPPORTED_LANGUAGES), f'{languageObj.name} is not supported'
+    # clean and tokenize the sentence
     cleanSentence = clean_text(sentence)
-
+    sentenceTokens = word_tokenize(cleanSentence, language=languageObj.name)
+    # initialize matrix
+    matrixShape = (languageObj.maxSentLen, languageObj.vocabSize)
+    sentenceMatrix = np.zeros(shape=matrixShape)
+    for wordNum, word in enumerate(sentenceTokens):
+        wordId = languageObj.idxDict[word]
+        sentenceMatrix[wordNum, wordId]
+    return sentenceMatrix
 
 
 def encode_training_data(featureWords, targetWords, featureLanguageObj,
@@ -244,7 +256,7 @@ def build_encoder_decoder(featureLanguageObj, targetLanguageObj, latentDims=300)
                                         cell vector) and initial state of
                                         decoder LSTM.
     Returns:
-        Non-compiled model of encoder/decoder LSTM.
+        Uncompiled model of encoder/decoder LSTM.
     """
     # cache language info from Language() objects
     featureVocabSize = featureLanguageObj.vocabSize
@@ -347,11 +359,8 @@ model.fit([encoderFeatures, decoderFeatures], decoderTargets, epochs=1, validati
 ## Sampling ##
 encoder_model = keras.models.Model(encoder_in, encoder_states)
 
-from keras.layers import Input
-
-
-decoder_state_input_h = Input(shape=(latentDims,))
-decoder_state_input_c = Input(shape=(latentDims,))
+decoder_state_input_h = keras.layers.Input(shape=(latentDims,))
+decoder_state_input_c = keras.layers.Input(shape=(latentDims,))
 decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
 decoder_outputs, state_h, state_c = decoder_lstm(decoder_in, initial_state=decoder_states_inputs)
 decoder_states = [state_h, state_c]
@@ -360,14 +369,15 @@ decoder_model = keras.models.Model(
     [decoder_in] + decoder_states_inputs,
     [decoder_outputs] + decoder_states)
 
+
 def decode_sequence(input_seq):
     # Encode the input as state vectors.
-    states_value = encoder_model.predict(input_seq)
+    states_value = encoder_model.predict(np.expand_dims(input_seq, axis=0))[0]
 
     # Generate empty target sequence of length 1.
-    target_seq = np.zeros((1, 1, num_decoder_tokens))
+    target_seq = np.zeros((1, 1, frenchObj.vocabSize))
     # Populate the first character of target sequence with the start character.
-    target_seq[0, 0, target_token_index['\t']] = 1.
+    target_seq[0, 0, frenchObj.idxDict['START']] = 1.
 
     # Sampling loop for a batch of sequences
     # (to simplify, here we assume a batch of size 1).
@@ -375,24 +385,31 @@ def decode_sequence(input_seq):
     decoded_sentence = ''
     while not stop_condition:
         output_tokens, h, c = decoder_model.predict(
-            [target_seq] + states_value)
+            target_seq + states_value)
 
         # Sample a token
         sampled_token_index = np.argmax(output_tokens[0, -1, :])
-        sampled_char = reverse_target_char_index[sampled_token_index]
+        sampled_char = frenchObj.reverseIdx[sampled_token_index]
         decoded_sentence += sampled_char
 
         # Exit condition: either hit max length
         # or find stop character.
-        if (sampled_char == '\n' or
-           len(decoded_sentence) > max_decoder_seq_length):
+        if (sampled_char == 'END' or
+           len(decoded_sentence) > frenchObj.maxSentLen):
             stop_condition = True
 
         # Update the target sequence (of length 1).
-        target_seq = np.zeros((1, 1, num_decoder_tokens))
+        target_seq = np.zeros((1, 1, frenchObj.vocabSize))
         target_seq[0, 0, sampled_token_index] = 1.
 
         # Update states
         states_value = [h, c]
 
     return decoded_sentence
+
+
+while True:
+    text = input('Text: ')
+    input_seq = encode_sentence(text, englishObj)
+    decoded_sentence = decode_sequence(input_seq)
+    print('Decoded sentence:', decoded_sentence)
