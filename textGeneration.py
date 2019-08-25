@@ -4,7 +4,7 @@ from tqdm import tqdm
 from nltk.tokenize import word_tokenize
 
 
-def text_to_words(textPath):
+def analyze_text(textPath):
     lenList = []
     with open(textPath, 'r') as textFile:
         rawText = textFile.read()
