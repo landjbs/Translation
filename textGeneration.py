@@ -30,23 +30,33 @@ def text_to_word_ids(textPath):
         reverseIdx = {i : word for word, i in tqdm(wordIdx.items())}
         word_to_id = lambda word : wordIdx[word]
         textIds = [word_to_id(word) for word in tqdm(textWords)]
-    return textIds, wordIdx, reverseIdx
+        vocabSize = len(wordIdx)
+    return textIds, wordIdx, reverseIdx, vocabSize
 
 
-textIds, wordIdx, reverseIdx = text_to_word_ids(TEXT_PATH)
+textIds, wordIdx, reverseIdx, vocabSize = text_to_word_ids(TEXT_PATH)
 
 
-def vectorize_context_seq(idList, reverseIdx):
+def one_hot_encode(wordId, vocabSize):
+    oneHotVec = np.zeros(shape=(vocabSize, ))
+    oneHotVec[wordId] = 1
+    return oneHotVec
+
+
+def vectorize_context_seq(idList, reverseIdx, vocabSize):
     """
     Vectorizes first seqSize tokens of idList using contextual attention
-    and outputs feature matrix of token embeddings and target word id
+    and outputs feature matrix of token embeddings and one hot vector encoding
+    target word id
     """
-    assert (len(idList)==(SEQ_SIZE + 1))
+    assert (len(idList) == (SEQ_SIZE + 1))
     seqWords = [reverseIdx[wordId] for wordId in idList[:-1]]
     vectorMatrix = bc.encode([seqWords], is_tokenized=True)[0]
     targetId = idList[-1]
+    targetVec = one_hot_encode(targetId, vocabSize)
     return vectorMatrix, targetId
 
+
 for i in range(0, 1000):
-    _, x = vectorize_context_seq(textIds[i:(i+101)], reverseIdx)
+    _, x = vectorize_context_seq(textIds[i:(i+101)], reverseIdx, vocabSize)
     print(reverseIdx[x])
