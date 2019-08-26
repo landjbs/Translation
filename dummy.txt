@@ -1,0 +1,5 @@
+hello,bonjour
+Goodbye,au revior
+What is up,que pasa?
+What?,que?
+What,que
